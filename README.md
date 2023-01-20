@@ -14,7 +14,7 @@ A novel deep learning-based drug-side effect frequency prediction model.
 
 # Run
 ```bash
-python main.py
+python main.py --split drug --drug_boost
 ```
 
 # Contact
