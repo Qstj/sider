@@ -38,9 +38,6 @@ class Model(nn.Module):
         self.z_encoder_1 = nn.Linear(drug_features[2], 1600)
         self.z_encoder_2 = nn.Linear(1600, embed_dim)
 
-        self.dxw = nn.Linear(embed_dim * 2, 1)
-        self.dz = nn.Linear(embed_dim, 1)
-
         self.xwz_aggregator = nn.Linear(embed_dim * 3, embed_dim)
 
         self.side_encoder = nn.Sequential(
@@ -72,9 +69,6 @@ class Model(nn.Module):
         z = F.relu_(self.z_encoder_1(z))
         z = F.dropout(z, p=.5, training=self.training)
         z = F.relu_(self.z_encoder_2(z))
-
-        dxw = self.dxw(torch.cat((x, w), dim=1))
-        dz = self.dz(z)
 
         xwz = torch.tanh(torch.amax(torch.stack((x, w, z)), dim=0))
 
