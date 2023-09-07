@@ -1,4 +1,5 @@
 from torch_geometric.nn import GATConv, GCNConv, GraphConv, ResGatedGraphConv, global_max_pool
+import os
 import pickle
 import numpy as np
 import torch
@@ -6,8 +7,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+cwd = os.path.dirname(__file__)
+if len(cwd) == 0:
+    cwd = '.'
+
 class Model(nn.Module):
-    def __init__(self, device, drug_features, heads=8, embed_dim=64, dropout=.125):
+    """
+    Dual representation learning model for drug-side effect frequency prediction.
+
+    Args:
+        device: cuda device to compute model parameters
+        drug_features: a tuple consisting of feature lengths for molecular graph (109),
+                       drug-drug similarity (750), and drug target NetGP (19127)
+        heads: number of attention heads for graph attention network (GATConv)
+        embed_dim: embedding dimension
+        dropout: dropout rate
+    """
+    def __init__(self, device, drug_features=(109, 750, 19127), heads=8, embed_dim=64, dropout=.125):
         super().__init__()
         self.device = device
         self.dropout = dropout
@@ -15,8 +31,8 @@ class Model(nn.Module):
         self.embed_dim = embed_dim
 
         side_effect_feature_paths = [
-            'data/glove_wordEmbedding.pkl',
-            'data/side_effect_label_750.pkl',
+            cwd+'/data/glove_wordEmbedding.pkl',
+            cwd+'/data/side_effect_label_750.pkl',
         ]
         side_effect_features = []
         for path in side_effect_feature_paths:

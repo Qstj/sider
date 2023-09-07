@@ -28,24 +28,43 @@ from dataset import *
 from model import *
 RDLogger.DisableLog('rdApp.*')
 
+cwd = os.path.dirname(__file__)
+if len(cwd) == 0:
+    cwd = '.'
 
-with open('data/Text_similarity_five.pkl', 'rb') as f:
+with open(cwd+'/data/Text_similarity_five.pkl', 'rb') as f:
     drug_similarity = torch.from_numpy(pickle.load(f))
 
-with open('data/effect_side_semantic.pkl', 'rb') as f:
+with open(cwd+'/data/effect_side_semantic.pkl', 'rb') as f:
     side_similarity = torch.from_numpy(pickle.load(f))
 
-with open('data/drug_side.pkl', 'rb') as f:
+with open(cwd+'/data/drug_side.pkl', 'rb') as f:
     Y = pickle.load(f)
 
+
+# Caches of drug/side effect embedding loss
 dd_sim = None
 ss_sim = None
 
 
 def train(model, train_loader, sampler, optimizer):
+    """
+    Function to train the given model.
+
+    Args:
+        model: model to train
+        train_loader: DataLoader of the training data
+        sampler: (750, 994) numpy matrix of data sampling weights for Adaboost
+        optimizer: optimizer used for training
+
+    Returns:
+        A tuple consisting of (training loss, drug embedding loss, side effect embedding loss)
+    """
+
     model.train()
     train_loss = [0., 0., 0.]
 
+    # Mask vectors for drugs/side effects if not in training set
     drug_mask = (sampler.sum(axis=1) > 0).astype(float)
     side_mask = (sampler.sum(axis=0) > 0).astype(float)
 
@@ -58,6 +77,7 @@ def train(model, train_loader, sampler, optimizer):
         y = y.flatten()
         lw = torch.ones_like(y)
 
+        # learning weight is determined by sampling weights and scaling (observed: 1, unobserved: 0.03)
         lw = lw * sampler[i].flatten()
         lw = lw * ((y > 0).float() + .03 * (y == 0).float())
         lw = lw.to(model.device)
@@ -67,6 +87,7 @@ def train(model, train_loader, sampler, optimizer):
         loss = predictive_loss
         train_loss[0] += predictive_loss.item()
 
+        # drug embedding loss after the first base model
         if dd_sim is not None:
             d_weight = sampler.sum(axis=1)
             d_weight = (d_weight.max() - d_weight)[i]
@@ -80,6 +101,7 @@ def train(model, train_loader, sampler, optimizer):
                 loss += drug_embedding_loss
                 train_loss[1] += drug_embedding_loss.item()
 
+        # side effect embedding loss after the first base model
         if ss_sim is not None:
             s_weight = sampler.sum(axis=0)
             s_weight = (s_weight.max() - s_weight)
@@ -106,6 +128,18 @@ def train(model, train_loader, sampler, optimizer):
 
 
 def test(model, test_loader, test_mask):
+    """
+    Function to test the given model.
+
+    Args:
+        model: model to test
+        test_loader: DataLoader of the testing data
+        test_mask: (750, 994) numpy matrix indicating whether if the drug-side effect pair is for testing
+        optimizer: optimizer used for training
+
+    Returns:
+        A tuple consisting of (evaluated metrics, prediction values)
+    """
     model.eval()
     ys = []
     fxs = []
@@ -150,6 +184,7 @@ def test(model, test_loader, test_mask):
             _yk = _y[np.array(_y2).astype(bool)]
             _fxk = _fx[np.array(_y2).astype(bool)]
 
+            # scc is zero for single label evaluation
             if np.unique(_yk).shape[0] > 1:
                 _scc = spearmanr(_yk, _fxk).correlation
                 drug_score['scc'][_d] = _scc
@@ -178,6 +213,7 @@ def test(model, test_loader, test_mask):
 
     SV = S.cpu().detach().numpy()
 
+    # average AUROC and AUPRC values for all drugs
     d_auroc = np.mean(list(drug_score['auc'].values()))
     d_auprc = np.mean(list(drug_score['map'].values()))
 
@@ -203,6 +239,19 @@ def test(model, test_loader, test_mask):
 
 
 def boost(estimators, estimator_weights, test_loader, test_mask, mode):
+    """
+    Function to test with linear sum of given estimators with weights.
+
+    Args:
+        estimators: list of models to test
+        model: model to test
+        test_loader: DataLoader of the testing data
+        test_mask: (750, 994) numpy matrix indicating whether if the drug-side effect pair is for testing
+        mode: either of ['classification', 'regression'] indicating how Adaboost works
+
+    Returns:
+        A tuple consisting of (evaluated metrics, prediction values)
+    """
     ys = []
     fxs = []
 
@@ -221,6 +270,9 @@ def boost(estimators, estimator_weights, test_loader, test_mask, mode):
         i, x, y = test_data
 
         if mode == 'classification':
+            # boosted output is a weighted sum of outputs of the base models
+            # recommended
+
             fx = torch.sum(torch.stack(
                 list(map(
                     lambda t: t[0](x)[0] * t[1],
@@ -228,6 +280,8 @@ def boost(estimators, estimator_weights, test_loader, test_mask, mode):
                     ))), dim=0) / sum(estimator_weights)
 
         elif mode == 'regression':
+            # boosted output is weighted median of outputs of the base models
+
             f = torch.stack(
                 list(map(
                     lambda t: t(x)[0],
@@ -301,6 +355,7 @@ def boost(estimators, estimator_weights, test_loader, test_mask, mode):
         ys.extend(y.tolist())
         fxs.extend(fx.tolist())
 
+    # average AUROC and AUPRC values of drugs
     d_auroc = np.mean(list(drug_score['auc'].values()))
     d_auprc = np.mean(list(drug_score['map'].values()))
 
@@ -355,18 +410,24 @@ def main(args):
     fold_best['R@1'] = []
     fold_best['R@15'] = []
 
-    global Y
+    global Y # (750, 994)-shaped frequency values
 
     dataset = Dataset()
     data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 
     kfold = KFold(args.folds, random_state=args.seed, shuffle=True)
     test_fold = np.zeros((750, 994))
+
     if args.split == 'drug':
+        # k-fold split of 750 drugs
+
         for k, (train_data, test_data) in enumerate(kfold.split(np.arange(750))):
             test_fold[test_data] = k
 
     else:
+        # k-fold split of 750*994 drug-side effect pairs
+        # keep balance of known(observed)/unknown(unobserved) labels
+
         test_fold = test_fold.reshape(-1)
 
         known = np.where(Y.reshape(-1) > 0)[0]
@@ -385,6 +446,8 @@ def main(args):
         train_mask = np.logical_and(test_fold != k, test_fold >= 0)
 
         if len(args.session_name) > 0:
+            # save scores only if session name specified
+
             perf = {
                 'train_mask': train_mask,
                 'test_mask': test_mask,
@@ -420,12 +483,15 @@ def main(args):
 
         print('{}> Fold {} <{}'.format('=' * 34, k+1, '=' * 34))
 
+        # Adaboost sampling weight
         sampler = np.ones((750, 994))
         sampler *= train_mask.astype(float)
         sampler /= sampler.sum()
 
+        # base models for Adaboost
         estimators = []
         estimator_weights = []
+
 
         model = Model(device=args.device, drug_features=dataset.len_features(), embed_dim=args.embed_dim, dropout=args.dropout).to(args.device)
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -434,7 +500,7 @@ def main(args):
         best = [0, np.inf, np.inf, 0, 0, 0, 0]
         # SCC, RMSE, MAE, AUROC, AUPRC, d-AUROC, d-AUPRC
 
-        epochs = args.n_boost * args.epochs
+        epochs = args.n_boost * args.epochs # number of base model * each epoch
 
         for epoch in range(epochs):
             train_loss = train(model, data_loader, sampler, optimizer)
@@ -456,6 +522,8 @@ def main(args):
 
 
             if (epoch + 1) % args.epochs == 0:
+                # new base model every epoch
+
                 FX, FX2, _, DV, SV = train_result
                 T = np.logical_or(
                     np.logical_and(Y > 0, FX2 > 0),
@@ -465,6 +533,12 @@ def main(args):
                 E = np.abs(Y - FX)
 
                 if args.mode == 'classification':
+                    # Adaboost classification
+                    # total error rate e
+                    # alpha = log((1-e)/e)/2
+                    # multiply sample weight by e^-alpha for correctly predicted data
+                    # multiply sample weight by e^alpha for incorrectly predicted data
+
                     e = (~T * sampler).sum()
 
                     if e > .5:
@@ -478,6 +552,11 @@ def main(args):
                         dw = np.tile(dw.mean(axis=1), (sampler.shape[1], 1)).T
 
                 elif args.mode == 'regression':
+                    # Adaboost regression
+                    # weighted sum of error rate e
+                    # beta = e/(1-e)
+                    # multiply sample data j's weight by beta^(1-e_j) for data error e_j
+
                     l_array = np.abs(Y - FX)
                     l_array /= np.max(l_array)
 
@@ -501,6 +580,7 @@ def main(args):
                 estimator_weights.append(estimator_weight)
 
                 if args.copy_boost:
+                    # initialize next base model to the current model's parameters
                     model = copy.deepcopy(model)
                 else:
                     model = Model(device=args.device, drug_features=dataset.len_features(), embed_dim=args.embed_dim, dropout=args.dropout).to(args.device)
@@ -511,6 +591,8 @@ def main(args):
 
                 star = ''
                 if best_criterion < _train_score[4]:
+                    # best training AUPRC
+
                     best_criterion = _train_score[4]
                     best = _test_score
                     star = '*'
@@ -531,6 +613,7 @@ def main(args):
                     _test_score[3], _test_score[4], _test_score[5], _test_score[6]))
 
 
+                # calculating nDCG, Precision, Recall up to top 15 predicted side effects
                 FX, FX2, drug_score = _test_result
                 test_drugs = list(drug_score['scc'].keys())
 
@@ -583,6 +666,7 @@ def main(args):
                         recalls[i][di] = recall[i]
 
 
+                # average the metric values by drugs
                 ndcg_10 = ndcgs[9].mean()
                 p_1 = precisions[0].mean()
                 p_15 = precisions[14].mean()
@@ -597,6 +681,8 @@ def main(args):
 
 
                 if len(args.session_name) > 0:
+                    # save scores only if session name specified
+
                     i = len(estimators) - 1
 
                     perf['alpha'][i] = estimator_weight
@@ -635,7 +721,10 @@ def main(args):
                         for d in _test_result[2][metric]:
                             perf['drug_score'][metric][args.n_boost+i][d] = _test_result[2][metric][d]
 
+                    # (750, args.embed_dim)-shaped drug vectors
                     perf['drug_vec'] = DV
+
+                    # (994, args.embed_dim)-shaped side effect vectors
                     perf['side_vec'] = SV
 
                     with open('{}/perf_{}.pkl'.format(args.session_name, k+1), 'wb') as f:

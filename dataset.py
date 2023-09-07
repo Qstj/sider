@@ -4,10 +4,16 @@ import copy
 import lzma
 import networkx as nx
 import numpy as np
+import os
 import pandas as pd
 import pickle
 import torch
 from torch_geometric.data.separate import separate
+
+
+cwd = os.path.dirname(__file__)
+if len(cwd) == 0:
+    cwd = '.'
 
 
 def atom_features(atom):
@@ -71,11 +77,16 @@ def smile_to_graph(smile):
 
 
 class Dataset(InMemoryDataset):
-    def __init__(self, transform=None, pre_transform=None):
-        super(Dataset, self).__init__(transform, pre_transform)
+    """
+    Dataset loads pre-processed molecular graph (x), drug similarity (w),
+    drug target protein information (z), and frequency (y)
+
+    """
+    def __init__(self):
+        super(Dataset, self).__init__()
 
         data_list = []
-        smiles = pd.read_excel('data/drug_SMILES.xlsx', header=None, engine='openpyxl')[1].tolist()
+        smiles = pd.read_excel(cwd+'/data/drug_SMILES.xlsx', header=None, engine='openpyxl')[1].tolist()
 
         for i in range(750):
             c_size, features, edge_index, edge_type = smile_to_graph(smiles[i])
@@ -87,21 +98,15 @@ class Dataset(InMemoryDataset):
 
             data_list.append(data)
 
-        if self.pre_filter is not None:
-            data_list = [data for data in data_list if self.pre_filter(data)]
-
-        if self.pre_transform is not None:
-            data_list = [self.pre_transform(data) for data in data_list]
-
         self.data, self.slices = self.collate(data_list)
 
-        with open('data/Text_similarity_five.pkl', 'rb') as f:
+        with open(cwd+'/data/Text_similarity_five.pkl', 'rb') as f:
             self.w = torch.from_numpy(pickle.load(f)).float()
 
-        with lzma.open('data/drug_target.xz', 'rb') as f:
+        with lzma.open(cwd+'/data/drug_target.xz', 'rb') as f:
             self.z = pickle.load(f)
 
-        with open('data/drug_side.pkl', 'rb') as f:
+        with open(cwd+'/data/drug_side.pkl', 'rb') as f:
             self.y = torch.from_numpy(pickle.load(f)).float()
 
 
