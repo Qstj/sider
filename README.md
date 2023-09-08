@@ -29,7 +29,7 @@ python main.py --split drug --drug_boost
 ```
 
 ### Configurable parameters
---epochs: how many epochs to train for each base model
+```--epochs: how many epochs to train for each base model
 --n_boost: how many base models
 --split: split scheme for drug-side effect pairs. 'drug' split recommended
 --drug_boost: if True, aggregates sample weights for Adaboost by drugs (recommended)
@@ -43,13 +43,13 @@ python main.py --split drug --drug_boost
 --seed: random seed
 --session_name: session name for writing log files
 --device: device to perform computations
---weight_decay: weight decaying penalty
+--weight_decay: weight decaying penalty```
 
 
 ## NetGP
 Drug target protein information vector is generated using NetGP, introduced in Pak et al. [1] We upload the codes of NetGP, to improve understanding of our model and to facilitate third-party application of our method.
 
-[1] Pak, Minwoo, et al. "Improved drug response prediction by drug target data integration via network-based profiling." Briefings in Bioinformatics 24.2 (2023): bbad034.
+```[1] Pak, Minwoo, et al. "Improved drug response prediction by drug target data integration via network-based profiling." Briefings in Bioinformatics 24.2 (2023): bbad034.```
 
 ### Using custom protein-protein interaction network
 
