@@ -52,7 +52,7 @@ Drug target protein information vector is generated using NetGP, introduced in P
 
 * [1] Pak, Minwoo, et al. "Improved drug response prediction by drug target data integration via network-based profiling." Briefings in Bioinformatics 24.2 (2023): bbad034.
 
-### Using custom protein-protein interaction network
+## Using custom protein-protein interaction network
 
 Prepare protein-protein interaction network formatted as:
 ```source	target	combined_score	
@@ -64,7 +64,7 @@ ARF5	RAPGEF1	181
 ```
 
 
-Load your own network using --ppi_fname parameter.
+Load your own network using --ppi_fname parameter. The original network file, netgp/Data/9606.protein.links.symbols.v11.5.txt, can be downloaded via https://string-db.org/ due to its large size.
 
 ```python netgp.py \
     --datadir $WORKDIR/Data \
