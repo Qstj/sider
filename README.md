@@ -76,6 +76,8 @@ Load your own network using --ppi_fname parameter. The original network file, ne
     --ppi_fname 9606.protein.links.symbols.v11.5.txt
 ```
 
+## Figures
+We uploaded notebook to draw Figure 3 and Figure 4 presented in the paper. The input file (sample.pkl from the notebook) is not provided due to its large size. However, one can run the main script with `--session_name` parameter to get one.
 
 
 # Contact
