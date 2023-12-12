@@ -54,7 +54,12 @@ class Model(nn.Module):
         self.z_encoder_1 = nn.Linear(drug_features[2], 1600)
         self.z_encoder_2 = nn.Linear(1600, embed_dim)
 
+        fp_dim = 64
+        self.v_encoder_1 = nn.Linear(1024, 256)
+        self.v_encoder_2 = nn.Linear(256, fp_dim)
+
         self.xwz_aggregator = nn.Linear(embed_dim * 3, embed_dim)
+        self.collector = nn.Linear(fp_dim + embed_dim, embed_dim)
 
         self.side_encoder = nn.Sequential(
             nn.Linear(self.side_effects.shape[1], embed_dim),
@@ -64,7 +69,7 @@ class Model(nn.Module):
             )
 
     def drug_encoder(self, x):
-        x, w, z = x
+        x, w, z, v = x
 
         x, edge_index, batch = x.x.to(self.device), x.edge_index.to(self.device), x.batch.to(self.device)
         x = F.relu_(self.x_encoder_1(x, edge_index))
@@ -85,10 +90,16 @@ class Model(nn.Module):
         z = F.relu_(self.z_encoder_1(z))
         z = F.dropout(z, p=.5, training=self.training)
         z = F.relu_(self.z_encoder_2(z))
+        
+        v = v.to(self.device)
+        v = F.relu_(self.v_encoder_1(v))
+        v = F.dropout(v, p=.5, training=self.training)
+        v = F.relu_(self.v_encoder_2(v))
 
-        xwz = torch.tanh(torch.amax(torch.stack((x, w, z)), dim=0))
+        xwz = self.xwz_aggregator(torch.cat((x, w, z), dim=1))
+        xwzv = torch.abs(torch.tanh((self.collector(torch.cat((xwz, v), dim=1)))))
 
-        return xwz
+        return xwzv
 
     def forward(self, x):
         drug_embedding = self.drug_encoder(x)
