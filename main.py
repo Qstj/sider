@@ -533,7 +533,14 @@ def main(args):
                     # multiply sample weight by e^-alpha for correctly predicted data
                     # multiply sample weight by e^alpha for incorrectly predicted data
 
-                    e = (~T * sampler).sum()
+                    e = (~T * sampler)
+
+                    ww = np.abs(FX - Y)
+                    ww[ww > 2] = 2
+
+                    e *= (ww / ww.mean())
+
+                    e = e.sum()
 
                     if e > .5:
                         continue
@@ -614,24 +621,17 @@ def main(args):
                 Y2 = (Y > 0).astype(np.int_)
 
                 K = 15
-                ndcgs = np.zeros((K, len(test_drugs)))
                 precisions = np.zeros((K, len(test_drugs)))
                 recalls = np.zeros((K, len(test_drugs)))
 
                 for d in test_drugs:
                     sides = np.argsort(FX[d])[::-1][:K]
 
-                    dcg = [0] * K
-                    idcg = [0] * K
                     precision = [0] * K
                     recall = [0] * K
 
                     for i in range(K):
                         s = sides[i]
-
-                        dcg[i] = Y2[d][s] / np.log2(i + 2)
-                        if i < np.count_nonzero(Y2[d]):
-                            idcg[i] = 1 / np.log2(i + 2)
 
                         tp = 0
                         if FX2[d][s] == 1 and Y2[d][s] == 1:
@@ -640,14 +640,10 @@ def main(args):
                         recall[i] = tp
 
                     for i in np.arange(1, K):
-                        dcg[i] += dcg[i - 1]
-                        idcg[i] += idcg[i - 1]
                         precision[i] += precision[i - 1]
                         recall[i] += recall[i - 1]
 
-                    ndcg = [0] * K
                     for i in range(K):
-                        ndcg[i] = dcg[i] / idcg[i]
                         precision[i] /= (i + 1)
 
                         if np.count_nonzero(Y2[d] * test_mask[d]) > 0:
@@ -655,13 +651,34 @@ def main(args):
 
                         di = test_drugs.index(d)
 
-                        ndcgs[i][di] = ndcg[i]
                         precisions[i][di] = precision[i]
                         recalls[i][di] = recall[i]
 
+                ndcgs = []
+
+                for d in test_drugs:
+                    sides = np.argsort(FX[d])[::-1][:10]
+                    trues = np.nonzero(Y2[d])[0]
+
+                    dcg, vec = 0, []
+
+                    for i in range(10):
+                        if sides[i] in trues:
+                            dcg += 1 / math.log(i+2, 2)
+                            vec.append(1)
+                        else:
+                            vec.append(0)
+                    vec.sort(reverse=True)
+
+                    idcg = sum([vec[i] / math.log(i+2, 2) for i in range(10)])
+                    if idcg > 0:
+                        ndcgs.append(dcg / idcg)
+                    else:
+                        ndcgs.append(idcg)
+
+                ndcg_10 = sum(ndcgs) / len(ndcgs)
 
                 # average the metric values by drugs
-                ndcg_10 = ndcgs[9].mean()
                 p_1 = precisions[0].mean()
                 p_15 = precisions[14].mean()
                 r_1 = recalls[0].mean()
@@ -781,8 +798,8 @@ if __name__ == '__main__':
     timestamp = datetime.now().strftime('%y%m%d%H%M%S')
 
     parser = argparse.ArgumentParser(description='my model')
-    parser.add_argument('--epochs', type=int, default=50, metavar='N')
-    parser.add_argument('--n_boost', type=int, default=10, metavar='N')
+    parser.add_argument('--epochs', type=int, default=30, metavar='N')
+    parser.add_argument('--n_boost', type=int, default=5, metavar='N')
     parser.add_argument('--split', type=str, default='random', metavar='STRING')
     parser.add_argument('--drug_boost', action='store_true', default=False)
     parser.add_argument('--copy_boost', action='store_true', default=False)
