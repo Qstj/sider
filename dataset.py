@@ -9,6 +9,8 @@ import pandas as pd
 import pickle
 import torch
 from torch_geometric.data.separate import separate
+from rdkit import Chem
+from rdkit.Chem import AllChem
 
 
 cwd = os.path.dirname(__file__)
@@ -108,6 +110,15 @@ class Dataset(InMemoryDataset):
 
         with open(cwd+'/data/drug_side.pkl', 'rb') as f:
             self.y = torch.from_numpy(pickle.load(f)).float()
+            
+        self.v = np.zeros((len(smiles), 1024))
+
+        for i in range(len(smiles)):
+            mol = Chem.MolFromSmiles(smiles[i])
+            fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=1024)
+            self.v[i] = np.fromstring(fp.ToBitString(), 'i1') - 48
+
+        self.v = torch.from_numpy(self.v).float()
 
 
     def len_features(self):
@@ -121,9 +132,10 @@ class Dataset(InMemoryDataset):
             x = copy.copy(self._data_list[index])
             w = self.w[index]
             z = self.z[index]
+            v = self.v[index]
             y = self.y[index]
 
-            return index, (x, w, z), y
+            return index, (x, w, z, v), y
 
 
         x = separate(
@@ -137,6 +149,7 @@ class Dataset(InMemoryDataset):
         self._data_list[index] = copy.copy(x)
         w = self.w[index]
         z = self.z[index]
+        v = self.v[index]
         y = self.y[index]
 
-        return index, (x, w, z), y
+        return index, (x, w, z, v), y
