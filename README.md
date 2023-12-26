@@ -28,6 +28,11 @@ python setup.py install
 python main.py --split drug --drug_boost
 ```
 
+Codes to reproduce the performance comparison can be found in the our forked repositories:
+* MGPred: https://github.com/eskendrian/MGPred
+* SDPred: https://github.com/eskendrian/SDPred
+* DSGAT: https://github.com/eskendrian/DSGAT
+
 ### Configurable parameters
 ```--epochs: how many epochs to train for each base model
 --n_boost: how many base models
